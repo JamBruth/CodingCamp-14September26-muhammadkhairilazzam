@@ -1,0 +1,489 @@
+/* ==========================================================================
+   Expense & Budget Visualizer — Base Stylesheet
+   Requirements: 7.1, 7.2
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. CSS Custom Properties (Design Tokens)
+   -------------------------------------------------------------------------- */
+:root {
+  --color-bg:          #f5f7fa;
+  --color-surface:     #ffffff;
+  --color-primary:     #4a6cf7;
+  --color-primary-hover: #3a5ce4;
+  --color-danger:      #e53e3e;
+  --color-text:        #1a202c;
+  --color-text-muted:  #718096;
+  --color-border:      #e2e8f0;
+  --color-error:       #e53e3e;
+
+  --radius:            8px;
+  --shadow-sm:         0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md:         0 4px 12px rgba(0, 0, 0, 0.10);
+
+  --max-content-width: 900px;
+  --gutter:            1.25rem;
+}
+
+/* --------------------------------------------------------------------------
+   2. Reset / Base
+   -------------------------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+               Helvetica, Arial, sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.6;
+  min-height: 100vh;
+  /* Prevent horizontal overflow at all viewport widths (Req 7.1) */
+  overflow-x: hidden;
+}
+
+/* --------------------------------------------------------------------------
+   3. Page-level layout wrapper — constrains max-width (Req 7.1, 7.2)
+   -------------------------------------------------------------------------- */
+.page-wrapper,
+body > header,
+body > main {
+  width: 100%;
+  max-width: var(--max-content-width);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: var(--gutter);
+  padding-right: var(--gutter);
+}
+
+/* --------------------------------------------------------------------------
+   4. Header — balance display (Req 7.1)
+   -------------------------------------------------------------------------- */
+header {
+  background-color: var(--color-primary);
+  color: #ffffff;
+  padding: 1.25rem var(--gutter);
+  /* Remove the local padding from body > header so the bg spans full width */
+  padding-left: 0;
+  padding-right: 0;
+  width: 100%;
+  max-width: 100%;
+  box-shadow: var(--shadow-md);
+}
+
+header .header-inner {
+  width: 100%;
+  max-width: var(--max-content-width);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: var(--gutter);
+  padding-right: var(--gutter);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+header h1 {
+  font-size: clamp(1.1rem, 4vw, 1.5rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+#balance-display {
+  font-size: clamp(0.95rem, 3vw, 1.1rem);
+  font-weight: 600;
+  background-color: rgba(255, 255, 255, 0.2);
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+#balance-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------------
+   5. Main content — vertical stack of sections (Req 7.1)
+   -------------------------------------------------------------------------- */
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding-top: 1.75rem;
+  padding-bottom: 2.5rem;
+  /* max-width + side gutters already applied via body > main rule above */
+}
+
+/* --------------------------------------------------------------------------
+   6. Shared section card style
+   -------------------------------------------------------------------------- */
+#form-section,
+#chart-section,
+#list-section {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 1.5rem var(--gutter);
+  /* Prevent any child from overflowing this card (Req 7.1) */
+  overflow: hidden;
+}
+
+/* --------------------------------------------------------------------------
+   7. Form section (Req 7.1, 7.2)
+   -------------------------------------------------------------------------- */
+#transaction-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+/* Stacked .field-group blocks */
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.field-group label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* Full-width inputs and select (Req 7.1) */
+.field-group input,
+.field-group select {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 1rem;
+  color: var(--color-text);
+  background-color: var(--color-surface);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  /* Prevent shrinking below their container on narrow screens */
+  min-width: 0;
+}
+
+.field-group input:focus,
+.field-group select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(74, 108, 247, 0.18);
+}
+
+/* Remove browser default number-input spinners in WebKit */
+.field-group input[type='number']::-webkit-inner-spin-button,
+.field-group input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.field-group input[type='number'] {
+  -moz-appearance: textfield;
+}
+
+/* Submit button */
+#transaction-form button[type='submit'] {
+  align-self: flex-start;
+  padding: 0.6rem 1.5rem;
+  background-color: var(--color-primary);
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+#transaction-form button[type='submit']:hover {
+  background-color: var(--color-primary-hover);
+}
+
+#transaction-form button[type='submit']:active {
+  transform: scale(0.97);
+}
+
+#transaction-form button[type='submit']:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   8. Inline error messages — hidden by default, shown when non-empty
+      (Req 1.5, 1.6 — aria-live="polite" set in HTML)
+   -------------------------------------------------------------------------- */
+.error-msg {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--color-error);
+  min-height: 1em; /* reserve space to avoid layout shift */
+  /* Hidden when empty — JS clears textContent to hide, sets it to show */
+}
+
+/* When error-msg has no text content, make it visually invisible but still
+   occupy space (avoids layout shift). JS manages textContent, not hidden attr. */
+.error-msg:empty {
+  visibility: hidden;
+}
+
+/* Storage-level error message (shown on localStorage failure) */
+#storage-error-msg {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  background-color: #fff5f5;
+  border: 1px solid #feb2b2;
+  border-radius: var(--radius);
+  color: var(--color-error);
+  font-size: 0.875rem;
+}
+
+/* --------------------------------------------------------------------------
+   9. Chart section (Req 5.x, 7.1, 7.5)
+   -------------------------------------------------------------------------- */
+#chart-section h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+#chart-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Min-width ensures chart stays readable at small viewports (Req 7.5) */
+  min-width: 0;
+}
+
+#spending-chart {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#chart-empty-state,
+#chart-error {
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  text-align: center;
+  padding: 2rem 0;
+  width: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   10. Transaction list section (Req 2.1, 2.2, 7.1)
+   -------------------------------------------------------------------------- */
+#list-section h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Scrollable container — max-height keeps it from pushing other content
+   off-screen (Req 2.2) */
+#transaction-list {
+  list-style: none;
+  max-height: 22rem;
+  overflow-y: auto;
+  /* Smooth momentum scrolling on iOS */
+  -webkit-overflow-scrolling: touch;
+  /* Subtle inset border to frame the scroll area */
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+/* Individual transaction list items */
+#transaction-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+  /* Prevent long names from overflowing the row */
+  min-width: 0;
+}
+
+#transaction-list li:last-child {
+  border-bottom: none;
+}
+
+#transaction-list li:nth-child(even) {
+  background-color: #fafafa;
+}
+
+/* Transaction item name — allow truncation on narrow screens */
+.transaction-name {
+  flex: 1 1 auto;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Category badge */
+.transaction-category {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background-color: #edf2ff;
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Amount */
+.transaction-amount {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Delete button */
+.delete-btn {
+  flex: 0 0 auto;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.25rem 0.5rem;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  /* Ensure the button is always focusable (Req 7.4) */
+  line-height: 1;
+}
+
+.delete-btn:hover {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+.delete-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Empty state message */
+#list-empty-state {
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  text-align: center;
+  padding: 1.5rem 0;
+}
+
+/* --------------------------------------------------------------------------
+   11. Responsive — mobile base (320px – 599px)  (Req 7.1, 7.5)
+   The full mobile media query is the responsibility of task 2.2, but the
+   base styles above already use fluid units (%, clamp, min-width: 0) so
+   no element should overflow at 320px. The 2.2 task adds the explicit
+   @media query with the ≥280px chart guarantee.
+   -------------------------------------------------------------------------- */
+
+/* Ensure the submit button goes full-width on very small screens so it
+   remains easy to tap — this is supplemental to the 2.2 media query. */
+@media (max-width: 400px) {
+  #transaction-form button[type='submit'] {
+    align-self: stretch;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   12. Responsive — mobile (max-width: 599px)  (Req 7.1, 7.5)
+   Task 2.2: explicit mobile breakpoint guaranteeing chart ≥ 280px and
+   zero horizontal overflow from 320px upward.
+   -------------------------------------------------------------------------- */
+@media (max-width: 599px) {
+
+  /* Reduce section card padding so content never clips the viewport edge */
+  #form-section,
+  #chart-section,
+  #list-section {
+    padding: 1rem 0.75rem;
+  }
+
+  /* Chart container: guarantee minimum width of 280px (Req 7.5) */
+  #chart-container {
+    min-width: 280px;
+    width: 100%;
+    /* Allow the container to shrink-wrap but never below 280px */
+    overflow: hidden;
+  }
+
+  /* Canvas itself fills the container and respects the 280px floor */
+  #spending-chart {
+    min-width: 280px;
+    width: 100% !important; /* override any Chart.js inline width */
+    height: auto !important;
+  }
+
+  /* Transaction list rows: allow wrapping so amount + button don't overflow */
+  #transaction-list li {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    padding: 0.65rem 0.75rem;
+  }
+
+  /* Name still gets as much space as possible */
+  .transaction-name {
+    flex-basis: 100%;
+    white-space: nowrap;
+  }
+
+  /* Delete button — minimum 44×44 touch target (Req 7.4, WCAG 2.5.5) */
+  .delete-btn {
+    min-width:  44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.4rem 0.6rem;
+  }
+
+  /* Prevent any stray wide element from causing horizontal scroll (Req 7.1) */
+  * {
+    max-width: 100%;
+  }
+
+  /* Inputs and select already use width:100%; reinforce on mobile */
+  .field-group input,
+  .field-group select {
+    font-size: 1rem; /* avoid iOS auto-zoom on focus (font-size < 16px) */
+  }
+
+  /* Submit button spans full width for easier tapping on small screens */
+  #transaction-form button[type='submit'] {
+    align-self: stretch;
+    width: 100%;
+  }
+
+  /* Header inner: stack title and balance vertically on very narrow screens */
+  header .header-inner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+}

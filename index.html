@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Expense &amp; Budget Visualizer</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script defer src="js/app.js"></script>
+</head>
+<body>
+
+  <header>
+    <div class="header-inner">
+      <h1>Expense &amp; Budget Visualizer</h1>
+      <div id="balance-display">
+        Total: $<span id="balance-value">0.00</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- Input Form -->
+    <section id="form-section">
+      <h2>Add Transaction</h2>
+
+      <p id="storage-error-msg" hidden>
+        Unable to save changes. Please check your browser storage settings.
+      </p>
+
+      <form id="transaction-form" novalidate>
+
+        <div class="field-group">
+          <label for="item-name">Item Name</label>
+          <input
+            type="text"
+            id="item-name"
+            name="item-name"
+            maxlength="100"
+            autocomplete="off"
+            placeholder="e.g. Coffee"
+          />
+          <span class="error-msg" id="error-item-name" aria-live="polite"></span>
+        </div>
+
+        <div class="field-group">
+          <label for="amount">Amount <b>$</b></label>
+          <input
+            type="number"
+            id="amount"
+            name="amount"
+            min="0.01"
+            max="999999999.99"
+            step="0.01"
+            placeholder="e.g. 4.50"
+          />
+          <span class="error-msg" id="error-amount" aria-live="polite"></span>
+        </div>
+
+        <div class="field-group">
+          <label for="category">Category</label>
+          <select id="category" name="category">
+            <option value="" disabled selected>Select a category</option>
+            <option value="Food">Food</option>
+            <option value="Transport">Transport</option>
+            <option value="Fun">Fun</option>
+          </select>
+          <span class="error-msg" id="error-category" aria-live="polite"></span>
+        </div>
+
+        <button type="submit">Add Transaction</button>
+
+      </form>
+    </section>
+
+    <!-- Chart -->
+    <section id="chart-section">
+      <h2>Spending by Category</h2>
+      <div id="chart-container">
+        <canvas id="spending-chart"></canvas>
+        <p id="chart-empty-state" hidden>No transactions yet — chart will appear here.</p>
+        <p id="chart-error" hidden>Chart could not be loaded (Chart.js unavailable).</p>
+      </div>
+    </section>
+
+    <!-- Transaction List -->
+    <section id="list-section">
+      <h2>Transaction History</h2>
+      <ul id="transaction-list" aria-label="Transaction history">
+        <!-- populated by JavaScript -->
+      </ul>
+      <p id="list-empty-state">No transactions yet.</p>
+    </section>
+
+  </main>
+
+  <!-- Chart.js — pinned version 4.4.4 (Req 5.5, 8.6) -->
+  <script
+    src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"
+    crossorigin="anonymous"
+  ></script>
+
+</body>
+</html>

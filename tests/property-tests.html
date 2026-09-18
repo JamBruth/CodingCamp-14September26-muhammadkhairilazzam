@@ -1,0 +1,1486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Expense &amp; Budget Visualizer — Property Tests</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 2rem;
+      line-height: 1.6;
+    }
+
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; color: #f1f5f9; }
+    .subtitle { font-size: 0.875rem; color: #94a3b8; margin-bottom: 2rem; }
+
+    #summary {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+    }
+
+    .stat {
+      background: #1e293b;
+      border-radius: 8px;
+      padding: 0.75rem 1.25rem;
+      min-width: 120px;
+    }
+    .stat-label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat-value { font-size: 1.75rem; font-weight: 700; }
+    .stat-value.pass { color: #22c55e; }
+    .stat-value.fail { color: #ef4444; }
+    .stat-value.pending { color: #94a3b8; }
+
+    .suite {
+      background: #1e293b;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+
+    .suite-header {
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .suite-header:hover { background: #263248; }
+
+    .badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.2rem 0.5rem;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge.pass { background: #14532d; color: #86efac; }
+    .badge.fail { background: #7f1d1d; color: #fca5a5; }
+    .badge.running { background: #1e3a5f; color: #93c5fd; }
+    .badge.pending { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+
+    .suite-title { font-weight: 600; flex: 1; }
+    .suite-meta { font-size: 0.8rem; color: #64748b; }
+
+    .suite-body {
+      border-top: 1px solid #334155;
+      padding: 1rem 1.25rem;
+      font-size: 0.875rem;
+    }
+
+    .detail-ok  { color: #86efac; }
+    .detail-err { color: #fca5a5; white-space: pre-wrap; font-family: monospace; font-size: 0.8rem; background: #2d1515; padding: 0.75rem; border-radius: 6px; margin-top: 0.5rem; }
+
+    .runs-badge { color: #94a3b8; font-size: 0.8rem; }
+
+    #run-btn {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.6rem 1.4rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 2rem;
+      transition: background 0.15s;
+    }
+    #run-btn:hover { background: #2563eb; }
+    #run-btn:disabled { background: #334155; cursor: not-allowed; }
+
+    /* Hidden DOM fixture used by tests — not visible to user */
+    #dom-fixture { display: none; }
+  </style>
+</head>
+<body>
+
+  <h1>Expense &amp; Budget Visualizer — Property Tests</h1>
+  <p class="subtitle">fast-check property-based tests · open directly from the filesystem</p>
+
+  <button id="run-btn">▶ Run All Tests</button>
+
+  <div id="summary">
+    <div class="stat"><div class="stat-label">Total</div><div class="stat-value pending" id="stat-total">—</div></div>
+    <div class="stat"><div class="stat-label">Passed</div><div class="stat-value pass" id="stat-pass">—</div></div>
+    <div class="stat"><div class="stat-label">Failed</div><div class="stat-value fail" id="stat-fail">—</div></div>
+  </div>
+
+  <div id="results"></div>
+
+  <!-- =====================================================================
+       Hidden DOM fixture — mirrors the elements the app functions rely on.
+
+       renderList()    needs: #transaction-list, #list-empty-state
+       renderBalance() needs: #balance-value
+       validateForm()  needs: #error-item-name, #error-amount, #error-category,
+                               #storage-error-msg
+       Property 2/3    needs: form#transaction-form, #item-name, #amount, #category
+  ====================================================================== -->
+  <div id="dom-fixture">
+    <!-- Transaction list -->
+    <ul id="transaction-list" aria-label="Transaction history"></ul>
+    <p id="list-empty-state">No transactions yet.</p>
+
+    <!-- Balance -->
+    <span id="balance-value">0.00</span>
+
+    <!-- Chart (not used in tests — placeholders only) -->
+    <canvas id="spending-chart"></canvas>
+    <p id="chart-empty-state" hidden>No transactions yet — chart will appear here.</p>
+    <p id="chart-error" hidden>Chart could not be loaded.</p>
+
+    <!-- Storage error -->
+    <p id="storage-error-msg" hidden>Storage error.</p>
+
+    <!-- Inline error spans -->
+    <span id="error-item-name" aria-live="polite"></span>
+    <span id="error-amount"    aria-live="polite"></span>
+    <span id="error-category"  aria-live="polite"></span>
+
+    <!-- Form used by Property 2 and Property 3 -->
+    <form id="transaction-form" novalidate>
+      <input  type="text"   id="item-name" maxlength="100" autocomplete="off" />
+      <input  type="number" id="amount"    min="0.01" max="999999999.99" step="0.01" />
+      <select id="category">
+        <option value="" disabled selected>Select a category</option>
+        <option value="Food">Food</option>
+        <option value="Transport">Transport</option>
+        <option value="Fun">Fun</option>
+      </select>
+    </form>
+  </div>
+
+  <!-- fast-check from pinned CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/fast-check@3.22.0/lib/bundle/fast-check.min.js"></script>
+
+  <script>
+  'use strict';
+
+  // ===========================================================================
+  // Inline copies of the pure app functions from js/app.js.
+  //
+  // This avoids CORS / IIFE-exposure issues when opening via file://.
+  // Keep these in sync with js/app.js whenever those functions change.
+  // renderChart() is intentionally omitted — Chart.js is not loaded here.
+  // ===========================================================================
+
+  /** @type {Array<{id:string,name:string,amount:number,category:string}>} */
+  var transactions = [];
+
+  // ---------------------------------------------------------------------------
+  // LocalStorage persistence
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Deserializes the transaction list from localStorage.
+   * Returns [] on missing key, corrupt JSON, or non-array value.
+   * @returns {Array}
+   */
+  function loadTransactions() {
+    try {
+      var raw = localStorage.getItem('transactions');
+      if (raw === null) return [];
+      var parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /**
+   * Serializes list to localStorage['transactions'].
+   * Lets DOMException propagate to the caller.
+   * @param {Array} list
+   */
+  function saveTransactions(list) {
+    localStorage.setItem('transactions', JSON.stringify(list));
+  }
+
+  // ---------------------------------------------------------------------------
+  // ID generation
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Generates a unique string id.
+   * Uses crypto.randomUUID() when available; falls back to timestamp+random.
+   * @returns {string}
+   */
+  function generateId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    return Date.now().toString(36) + Math.random().toString(36).slice(2);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mutations
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Appends a transaction, saves to localStorage, re-renders.
+   * On save failure, reverts and shows #storage-error-msg.
+   * @param {{id:string,name:string,amount:number,category:string}} transaction
+   */
+  function addTransaction(transaction) {
+    transactions.push(transaction);
+    try {
+      saveTransactions(transactions);
+    } catch (e) {
+      transactions.pop();
+      var errorMsg = document.getElementById('storage-error-msg');
+      if (errorMsg) errorMsg.removeAttribute('hidden');
+      return;
+    }
+    renderAll();
+  }
+
+  /**
+   * Removes a transaction by id, saves to localStorage, re-renders.
+   * On save failure, restores previous state and shows #storage-error-msg.
+   * @param {string} id
+   */
+  function deleteTransaction(id) {
+    var prev = transactions.slice();
+    transactions = transactions.filter(function (t) { return t.id !== id; });
+    try {
+      saveTransactions(transactions);
+    } catch (e) {
+      transactions = prev;
+      var errorMsg = document.getElementById('storage-error-msg');
+      if (errorMsg) errorMsg.removeAttribute('hidden');
+      return;
+    }
+    renderAll();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Renderers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Clears and rebuilds <ul id="transaction-list"> from `transactions`.
+   * Renders in reverse insertion order (newest first) — Req 2.5.
+   * Toggles #list-empty-state visibility — Req 2.4.
+   */
+  function renderList() {
+    var ul = document.getElementById('transaction-list');
+    var emptyState = document.getElementById('list-empty-state');
+
+    if (!ul) return;
+
+    ul.innerHTML = '';
+
+    if (transactions.length === 0) {
+      if (emptyState) emptyState.removeAttribute('hidden');
+      return;
+    }
+
+    if (emptyState) emptyState.setAttribute('hidden', '');
+
+    for (var i = transactions.length - 1; i >= 0; i--) {
+      var t = transactions[i];
+
+      var li = document.createElement('li');
+      li.className = 'transaction-item';
+
+      var nameSpan = document.createElement('span');
+      nameSpan.className = 'transaction-name';
+      nameSpan.textContent = t.name;
+
+      var amountSpan = document.createElement('span');
+      amountSpan.className = 'transaction-amount';
+      amountSpan.textContent = parseFloat(t.amount).toFixed(2);
+
+      var categorySpan = document.createElement('span');
+      categorySpan.className = 'transaction-category';
+      categorySpan.textContent = t.category;
+
+      var deleteBtn = document.createElement('button');
+      deleteBtn.className = 'delete-btn';
+      deleteBtn.setAttribute('data-id', t.id);
+      deleteBtn.setAttribute('aria-label', 'Delete ' + t.name);
+      deleteBtn.textContent = 'Delete';
+
+      li.appendChild(nameSpan);
+      li.appendChild(amountSpan);
+      li.appendChild(categorySpan);
+      li.appendChild(deleteBtn);
+
+      ul.appendChild(li);
+    }
+  }
+
+  /**
+   * Computes the running total from `transactions` and writes it to #balance-value.
+   * Only counts entries where parseFloat(amount) is finite and > 0 — Req 4.5.
+   * Rounds to 2 decimal places — Req 4.1.
+   */
+  function renderBalance() {
+    var sum = 0;
+    for (var i = 0; i < transactions.length; i++) {
+      var v = parseFloat(transactions[i].amount);
+      if (isFinite(v) && v > 0) {
+        sum += v;
+      }
+    }
+    var formatted = (Math.round(sum * 100) / 100).toFixed(2);
+    var balanceEl = document.getElementById('balance-value');
+    if (balanceEl) balanceEl.textContent = formatted;
+  }
+
+  /**
+   * Triggers renderList() and renderBalance().
+   * renderChart() is deliberately omitted — Chart.js is not loaded in tests.
+   */
+  function renderAll() {
+    renderList();
+    renderBalance();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Inline validation helper (used by Property 3)
+  // Mirrors the validation logic in app.js's form submit handler.
+  // ---------------------------------------------------------------------------
+
+  var VALID_CATEGORIES = ['Food', 'Transport', 'Fun'];
+
+  /**
+   * Validates raw form field values.
+   * Returns an object whose keys are the field names that failed; empty object = valid.
+   * Also writes error messages into the inline error spans (mirrors app.js behaviour
+   * so Property 3 can assert that at least one span is non-empty).
+   *
+   * @param {string} itemName  — trimmed item name
+   * @param {string} amountStr — raw amount string (not yet parsed)
+   * @param {string} category  — selected category string
+   * @returns {{ name?:string, amount?:string, category?:string }}
+   */
+  function validateForm(itemName, amountStr, category) {
+    var errors = {};
+
+    var errName     = document.getElementById('error-item-name');
+    var errAmount   = document.getElementById('error-amount');
+    var errCategory = document.getElementById('error-category');
+
+    // Clear previous messages first
+    if (errName)     errName.textContent     = '';
+    if (errAmount)   errAmount.textContent   = '';
+    if (errCategory) errCategory.textContent = '';
+
+    if (!itemName || itemName.trim() === '') {
+      errors.name = 'Item name is required.';
+      if (errName) errName.textContent = errors.name;
+    }
+
+    var v = parseFloat(amountStr);
+    if (amountStr === '' || !isFinite(v) || v <= 0 || v > 999999999.99) {
+      errors.amount = amountStr === ''
+        ? 'Amount is required.'
+        : 'Amount must be a positive number no greater than 999,999,999.99.';
+      if (errAmount) errAmount.textContent = errors.amount;
+    }
+
+    if (VALID_CATEGORIES.indexOf(category) === -1) {
+      errors.category = 'Please select a category.';
+      if (errCategory) errCategory.textContent = errors.category;
+    }
+
+    return errors;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Chart data preparation helper (used by Property 9)
+  // Mirrors the activeCats / activeData computation in renderChart() in app.js.
+  // Chart.js is not loaded in this harness, so we test the data layer directly.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Mirrors the data-preparation step of renderChart():
+   * computes per-category totals and filters out zero-total categories.
+   *
+   * @param {Array<{category:string,amount:number}>} txns
+   * @returns {{ activeCats: string[], activeData: number[] }}
+   */
+  function computeChartData(txns) {
+    var CATEGORIES = ['Food', 'Transport', 'Fun'];
+    var totals = CATEGORIES.map(function (cat) {
+      return txns
+        .filter(function (t) { return t.category === cat; })
+        .reduce(function (sum, t) {
+          var v = parseFloat(t.amount);
+          return sum + (isFinite(v) && v > 0 ? v : 0);
+        }, 0);
+    });
+    var activeCats = [];
+    var activeData = [];
+    for (var i = 0; i < CATEGORIES.length; i++) {
+      if (totals[i] > 0) {
+        activeCats.push(CATEGORIES[i]);
+        activeData.push(totals[i]);
+      }
+    }
+    return { activeCats: activeCats, activeData: activeData };
+  }
+
+  // ===========================================================================
+  // Minimal test harness utilities
+  // ===========================================================================
+
+  var suites = [];
+
+  /**
+   * Registers a named property test.
+   * @param {string}   name  Human-readable test name
+   * @param {string}   tag   Source tag comment
+   * @param {Function} fn    async/sync function that calls fc.assert(...)
+   */
+  function registerTest(name, tag, fn) {
+    suites.push({ name: name, tag: tag, fn: fn, status: 'pending', error: null, runs: null });
+  }
+
+  /**
+   * Resets all fixture state between test runs so state does not bleed.
+   */
+  function resetFixture() {
+    // Reset in-memory state
+    transactions = [];
+
+    // Clear localStorage key used by the app
+    localStorage.removeItem('transactions');
+
+    // Clear the DOM list
+    var ul = document.getElementById('transaction-list');
+    if (ul) ul.innerHTML = '';
+
+    // Show empty state
+    var emptyState = document.getElementById('list-empty-state');
+    if (emptyState) emptyState.removeAttribute('hidden');
+
+    // Reset balance display
+    var balanceEl = document.getElementById('balance-value');
+    if (balanceEl) balanceEl.textContent = '0.00';
+
+    // Clear inline error spans
+    var errName     = document.getElementById('error-item-name');
+    var errAmount   = document.getElementById('error-amount');
+    var errCategory = document.getElementById('error-category');
+    if (errName)     errName.textContent     = '';
+    if (errAmount)   errAmount.textContent   = '';
+    if (errCategory) errCategory.textContent = '';
+
+    // Hide storage error message
+    var storageErr = document.getElementById('storage-error-msg');
+    if (storageErr) storageErr.setAttribute('hidden', '');
+
+    // Reset the form fields
+    var form = document.getElementById('transaction-form');
+    if (form) form.reset();
+  }
+
+  // ===========================================================================
+  // Shared arbitraries
+  // ===========================================================================
+
+  /** Produces a single valid Transaction-shaped record (no id — callers add it). */
+  function validTransactionFieldsArb() {
+    return fc.record({
+      name:     fc.string({ minLength: 1, maxLength: 100 })
+                  .filter(function (s) { return s.trim().length > 0; }),
+      amount:   fc.float({ min: 0.01, max: 999999.99, noNaN: true })
+                  .filter(function (v) { return isFinite(v) && v > 0; }),
+      category: fc.constantFrom('Food', 'Transport', 'Fun')
+    });
+  }
+
+  /** Produces a full Transaction object including a generated id. */
+  function transactionArb() {
+    return validTransactionFieldsArb().map(function (fields) {
+      return { id: generateId(), name: fields.name, amount: fields.amount, category: fields.category };
+    });
+  }
+
+  /** Produces a non-empty array of Transactions (1–20 items). */
+  function nonEmptyTransactionArrayArb() {
+    return fc.array(transactionArb(), { minLength: 1, maxLength: 20 });
+  }
+
+  // ===========================================================================
+  // Property 1: Transaction submission appends to list
+  //
+  // Feature: expense-budget-visualizer, Property 1
+  // Validates: Requirements 1.2
+  //
+  // For any valid transaction, calling addTransaction should grow the
+  // transactions array by exactly 1 and the last rendered <li> should
+  // reflect the correct name, formatted amount, and category.
+  // ===========================================================================
+
+  registerTest(
+    'Property 1: Transaction submission appends to list',
+    '// Feature: expense-budget-visualizer, Property 1',
+    async function () {
+      await fc.assert(
+        fc.property(validTransactionFieldsArb(), function (fields) {
+          resetFixture();
+
+          var lengthBefore = transactions.length; // 0 after reset
+
+          // Build and add the transaction (mirrors the app's form submit path)
+          var transaction = {
+            id:       generateId(),
+            name:     fields.name,
+            amount:   parseFloat(fields.amount),
+            category: fields.category
+          };
+          addTransaction(transaction);
+
+          // ── Assertion A: array grew by exactly 1 ──────────────────────────
+          if (transactions.length !== lengthBefore + 1) {
+            throw new Error(
+              'Expected transactions.length to be ' + (lengthBefore + 1) +
+              ', got ' + transactions.length
+            );
+          }
+
+          // ── Assertion B: last rendered <li> matches the added transaction ─
+          var ul  = document.getElementById('transaction-list');
+          var lis = ul ? Array.from(ul.querySelectorAll('li')) : [];
+
+          // renderList renders newest-first, so the added item is lis[0]
+          if (lis.length === 0) {
+            throw new Error('Expected at least one <li> after addTransaction, found 0');
+          }
+          var firstLi = lis[0];
+          var liText  = firstLi.textContent;
+
+          if (liText.indexOf(fields.name) === -1) {
+            throw new Error(
+              'Name "' + fields.name + '" not found in first <li> textContent: "' + liText + '"'
+            );
+          }
+
+          var expectedAmount = parseFloat(fields.amount).toFixed(2);
+          if (liText.indexOf(expectedAmount) === -1) {
+            throw new Error(
+              'Amount "' + expectedAmount + '" not found in first <li> textContent: "' + liText + '"'
+            );
+          }
+
+          if (liText.indexOf(fields.category) === -1) {
+            throw new Error(
+              'Category "' + fields.category + '" not found in first <li> textContent: "' + liText + '"'
+            );
+          }
+
+          return true;
+        }),
+        { numRuns: 100, verbose: true }
+      );
+    }
+  );
+
+  // ===========================================================================
+  // Property 2: Valid submission clears the form
+  //
+  // Feature: expense-budget-visualizer, Property 2
+  // Validates: Requirements 1.4
+  //
+  // For any valid transaction submission, immediately after addTransaction()
+  // and form.reset(), the item-name field must be empty, the amount field must
+  // be empty, and the category selector must be in its default unselected state.
+  // ===========================================================================
+
+  registerTest(
+    'Property 2: Valid submission clears the form',
+    '// Feature: expense-budget-visualizer, Property 2',
+    async function () {
+      await fc.assert(
+        fc.property(validTransactionFieldsArb(), function (fields) {
+          resetFixture();
+
+          // Populate form fields programmatically (simulates user input)
+          var itemNameInput  = document.getElementById('item-name');
+          var amountInput    = document.getElementById('amount');
+          var categorySelect = document.getElementById('category');
+
+          if (itemNameInput)  itemNameInput.value  = fields.name;
+          if (amountInput)    amountInput.value    = fields.amount.toString();
+          if (categorySelect) categorySelect.value = fields.category;
+
+          // Simulate the successful submit path: addTransaction + form.reset()
+          var transaction = {
+            id:       generateId(),
+            name:     fields.name,
+            amount:   parseFloat(fields.amount),
+            category: fields.category
+          };
+          addTransaction(transaction);
+
+          var form = document.getElementById('transaction-form');
+          if (form) form.reset();
+
+          // ── Assertions: all form fields are in their reset/default state ──
+
+          var nameVal     = itemNameInput  ? itemNameInput.value  : null;
+          var amountVal   = amountInput    ? amountInput.value    : null;
+          var categoryVal = categorySelect ? categorySelect.value : null;
+
+          if (nameVal !== '') {
+            throw new Error(
+              'Expected #item-name to be empty after reset, got "' + nameVal + '"'
+            );
+          }
+
+          if (amountVal !== '') {
+            throw new Error(
+              'Expected #amount to be empty after reset, got "' + amountVal + '"'
+            );
+          }
+
+          // After form.reset(), the <select> should return to its default
+          // disabled placeholder option (value === "")
+          if (categoryVal !== '') {
+            throw new Error(
+              'Expected #category to be empty/unselected after reset, got "' + categoryVal + '"'
+            );
+          }
+
+          return true;
+        }),
+        { numRuns: 100, verbose: true }
+      );
+    }
+  );
+
+  // ===========================================================================
+  // Property 3: Invalid inputs are rejected without side effects
+  //
+  // Feature: expense-budget-visualizer, Property 3
+  // Validates: Requirements 1.5, 1.6
+  //
+  // For any form submission where at least one field is empty/unselected or
+  // the amount is invalid, validateForm() must return errors, the transaction
+  // list must be unchanged, localStorage must be unchanged, and the balance
+  // display must be unchanged.
+  // ===========================================================================
+
+  registerTest(
+    'Property 3: Invalid inputs are rejected without side effects',
+    '// Feature: expense-budget-visualizer, Property 3',
+    async function () {
+      // Generator that always produces at least one invalid field.
+      // We use fc.oneof to pick which field(s) are invalid.
+      var invalidNameArb = fc.constantFrom('', '   ', '\t', '\n');
+
+      var invalidAmountStrArb = fc.oneof(
+        fc.constantFrom('', 'abc', '0', '-1', '-0.01', 'NaN', 'Infinity'),
+        // numbers out of range
+        fc.double({ min: -1e9, max: 0, noNaN: true })
+          .filter(function (v) { return v <= 0; })
+          .map(function (v) { return v.toString(); })
+      );
+
+      var invalidCategoryArb = fc.constantFrom('', 'Other', 'food', 'FOOD', 'transport', '0');
+
+      // Pick which combination of fields are invalid:
+      //  0 = only name invalid, keep amount/category valid
+      //  1 = only amount invalid, keep name/category valid
+      //  2 = only category invalid, keep name/amount valid
+      //  3 = all three invalid
+      var scenario = fc.integer({ min: 0, max: 3 });
+
+      var validNameArb     = fc.string({ minLength: 1, maxLength: 50 })
+                               .filter(function (s) { return s.trim().length > 0; });
+      var validAmountStrArb = fc.float({ min: 0.01, max: 999999.99, noNaN: true })
+                               .filter(function (v) { return isFinite(v) && v > 0; })
+                               .map(function (v) { return v.toString(); });
+      var validCategoryArb = fc.constantFrom('Food', 'Transport', 'Fun');
+
+      var inputArb = fc.tuple(scenario, validNameArb, invalidNameArb,
+                              validAmountStrArb, invalidAmountStrArb,
+                              validCategoryArb, invalidCategoryArb)
+        .map(function (t) {
+          var s = t[0];
+          return {
+            name:      (s === 0 || s === 3) ? t[2] : t[1],   // invalid or valid name
+            amountStr: (s === 1 || s === 3) ? t[4] : t[3],   // invalid or valid amount
+            category:  (s === 2 || s === 3) ? t[6] : t[5]    // invalid or valid category
+          };
+        });
+
+      await fc.assert(
+        fc.property(inputArb, function (input) {
+          resetFixture();
+
+          // Record pre-submission state
+          var lengthBefore   = transactions.length;           // 0
+          var storageBefore  = localStorage.getItem('transactions'); // null
+          var balanceBefore  = document.getElementById('balance-value')
+                                ? document.getElementById('balance-value').textContent
+                                : '0.00';
+
+          // Run validation (mirrors app.js submit handler)
+          var errors = validateForm(input.name, input.amountStr, input.category);
+
+          // ── Assertion A: validation returned at least one error ────────────
+          if (Object.keys(errors).length === 0) {
+            throw new Error(
+              'Expected at least one validation error for input ' +
+              JSON.stringify(input) + ', but validateForm returned no errors'
+            );
+          }
+
+          // ── Assertion B: transaction list is unchanged ─────────────────────
+          if (transactions.length !== lengthBefore) {
+            throw new Error(
+              'Expected transactions.length to remain ' + lengthBefore +
+              ' after invalid submit, got ' + transactions.length
+            );
+          }
+
+          // ── Assertion C: localStorage is unchanged ─────────────────────────
+          var storageAfter = localStorage.getItem('transactions');
+          if (storageAfter !== storageBefore) {
+            throw new Error(
+              'Expected localStorage["transactions"] to remain unchanged after invalid submit. ' +
+              'Before: ' + storageBefore + ', After: ' + storageAfter
+            );
+          }
+
+          // ── Assertion D: balance display is unchanged ──────────────────────
+          var balanceAfter = document.getElementById('balance-value')
+            ? document.getElementById('balance-value').textContent
+            : '0.00';
+          if (balanceAfter !== balanceBefore) {
+            throw new Error(
+              'Expected balance to remain "' + balanceBefore +
+              '" after invalid submit, got "' + balanceAfter + '"'
+            );
+          }
+
+          // ── Assertion E: at least one error span is non-empty ─────────────
+          var errName     = document.getElementById('error-item-name');
+          var errAmount   = document.getElementById('error-amount');
+          var errCategory = document.getElementById('error-category');
+          var anyErrorVisible = (
+            (errName     && errName.textContent.trim().length     > 0) ||
+            (errAmount   && errAmount.textContent.trim().length   > 0) ||
+            (errCategory && errCategory.textContent.trim().length > 0)
+          );
+          if (!anyErrorVisible) {
+            throw new Error(
+              'Expected at least one error span to be non-empty after invalid submit'
+            );
+          }
+
+          return true;
+        }),
+        { numRuns: 100, verbose: true }
+      );
+    }
+  );
+
+  // ===========================================================================
+  // Property 4: Transaction list renders all stored transactions
+  //
+  // Feature: expense-budget-visualizer, Property 4
+  // Validates: Requirements 2.1
+  //
+  // For any non-empty array of transactions, renderList() should produce
+  // exactly one <li> per transaction, and each <li> should reflect the correct
+  // name, amount (2 d.p.), and category of its corresponding transaction.
+  // ===========================================================================
+
+  registerTest(
+    'Property 4: Transaction list renders all stored transactions',
+    '// Feature: expense-budget-visualizer, Property 4',
+    async function () {
+      var transactionArb4 = fc.array(
+        fc.record({
+          id:       fc.string({ minLength: 1, maxLength: 36 }),
+          name:     fc.string({ minLength: 1, maxLength: 100 }),
+          amount:   fc.float({ min: 0.01, max: 999999999.99, noNaN: true }),
+          category: fc.constantFrom('Food', 'Transport', 'Fun')
+        }),
+        { minLength: 1, maxLength: 20 }
+      );
+
+      await fc.assert(
+        fc.property(transactionArb4, function (txList) {
+          resetFixture();
+          transactions = txList.slice();
+          renderList();
+
+          var ul  = document.getElementById('transaction-list');
+          var lis = ul ? Array.from(ul.querySelectorAll('li')) : [];
+
+          // ── Assertion A: one <li> per transaction ──────────────────────────
+          if (lis.length !== txList.length) {
+            throw new Error(
+              'Expected ' + txList.length + ' list items, got ' + lis.length
+            );
+          }
+
+          // ── Assertion B: each transaction's data appears in the correct <li>
+          // renderList iterates in reverse so DOM index = array.length-1-i
+          for (var i = 0; i < txList.length; i++) {
+            var t        = txList[i];
+            var domIndex = txList.length - 1 - i;
+            var li       = lis[domIndex];
+            var liText   = li.textContent;
+
+            if (liText.indexOf(t.name) === -1) {
+              throw new Error(
+                'Transaction name "' + t.name + '" not found in li[' + domIndex + '] textContent: "' + liText + '"'
+              );
+            }
+
+            var expectedAmount = parseFloat(t.amount).toFixed(2);
+            if (liText.indexOf(expectedAmount) === -1) {
+              throw new Error(
+                'Expected amount "' + expectedAmount + '" not found in li[' + domIndex + '] textContent: "' + liText + '"'
+              );
+            }
+
+            if (liText.indexOf(t.category) === -1) {
+              throw new Error(
+                'Category "' + t.category + '" not found in li[' + domIndex + '] textContent: "' + liText + '"'
+              );
+            }
+          }
+
+          // ── Assertion C: empty-state is hidden when transactions exist ──────
+          var emptyState = document.getElementById('list-empty-state');
+          if (emptyState && !emptyState.hasAttribute('hidden')) {
+            throw new Error('#list-empty-state should be hidden when transactions.length > 0');
+          }
+
+          return true;
+        }),
+        { numRuns: 100, verbose: true }
+      );
+    }
+  );
+
+  // ===========================================================================
+  // Property 5: Transactions display in reverse insertion order
+  //
+  // Feature: expense-budget-visualizer, Property 5
+  // Validates: Requirements 2.5
+  //
+  // For any sequence of 2+ transactions, the first rendered <li> should
+  // match the last array entry (most recently added) and the last rendered
+  // <li> should match the first array entry (oldest).
+  // ===========================================================================
+
+  registerTest(
+    'Property 5: Transactions display in reverse insertion order',
+    '// Feature: expense-budget-visualizer, Property 5',
+    async function () {
+      // Need at least 2 so we can check both ends
+      var orderedTxArb = fc.array(
+        fc.record({
+          id:       fc.string({ minLength: 1, maxLength: 36 }),
+          name:     fc.string({ minLength: 1, maxLength: 100 })
+                      .filter(function (s) { return s.trim().length > 0; }),
+          amount:   fc.float({ min: 0.01, max: 999999.99, noNaN: true })
+                      .filter(function (v) { return isFinite(v) && v > 0; }),
+          category: fc.constantFrom('Food', 'Transport', 'Fun')
+        }),
+        { minLength: 2, maxLength: 20 }
+      );
+
+      await fc.assert(
+        fc.property(orderedTxArb, function (txList) {
+          resetFixture();
+          transactions = txList.slice();
+          renderList();
+
+          var ul  = document.getElementById('transaction-list');
+          var lis = ul ? Array.from(ul.querySelectorAll('li')) : [];
+
+          if (lis.length !== txList.length) {
+            throw new Error(
+              'Expected ' + txList.length + ' list items, got ' + lis.length
+            );
+          }
+
+          // ── Assertion A: first DOM <li> matches LAST array item (newest) ───
+          var newestTx    = txList[txList.length - 1];
+          var firstLiText = lis[0].textContent;
+          if (firstLiText.indexOf(newestTx.name) === -1) {
+            throw new Error(
+              'Expected first <li> to contain newest transaction name "' + newestTx.name +
+              '", but got: "' + firstLiText + '"'
+            );
+          }
+
+          // ── Assertion B: last DOM <li> matches FIRST array item (oldest) ───
+          var oldestTx   = txList[0];
+          var lastLiText = lis[lis.length - 1].textContent;
+          if (lastLiText.indexOf(oldestTx.name) === -1) {
+            throw new Error(
+              'Expected last <li> to contain oldest transaction name "' + oldestTx.name +
+              '", but got: "' + lastLiText + '"'
+            );
+          }
+
+          return true;
+        }),
+        { numRuns: 100, verbose: true }
+      );
+    }
+  );
+
+  // ===========================================================================
+  // Property 6: Every rendered transaction has a delete button
+  //
+  // Feature: expense-budget-visualizer, Property 6
+  // Validates: Requirements 3.1
+  //
+  // For any non-empty array of transactions, every rendered <li> must contain
+  // exactly one <button>, and that button must have a non-empty aria-label.
+  // ===========================================================================
+
+  registerTest(
+    'Property 6: Every rendered transaction has a delete button',
+    '// Feature: expense-budget-visualizer, Property 6',
+    async function () {
+      var nonEmptyTransactionArb6 = fc.array(
+        fc.record({
+          id:       fc.string({ minLength: 1, maxLength: 36 }),
+          name:     fc.string({ minLength: 1, maxLength: 100 })
+                      .filter(function (s) { return s.trim().length > 0; }),
+          amount:   fc.float({ min: 0.01, max: 999999999.99, noNaN: true })
+                      .filter(function (v) { return v > 0 && isFinite(v); }),
+          category: fc.constantFrom('Food', 'Transport', 'Fun')
+        }),
+        { minLength: 1, maxLength: 20 }
+      );
+
+      await fc.assert(
+        fc.property(nonEmptyTransactionArb6, function (txns) {
+          resetFixture();
+          transactions = txns.slice();
+          renderList();
+
+          var ul  = document.getElementById('transaction-list');
+          var lis = ul ? Array.from(ul.querySelectorAll('li')) : [];
+
+          // ── Assertion A: rendered count matches input length ───────────────
+          if (lis.length !== txns.length) {
+            throw new Error(
+              'Expected ' + txns.length + ' list items, got ' + lis.length
+            );
+          }
+
+          // ── Assertion B: each <li> has exactly one <button> ───────────────
+          for (var i = 0; i < lis.length; i++) {
+            var buttons = lis[i].querySelectorAll('button');
+            if (buttons.length !== 1) {
+              throw new Error(
+                'li[' + i + '] has ' + buttons.length + ' button(s); expected exactly 1'
+              );
+            }
+
+            // ── Assertion C: the button has a non-empty aria-label ──────────
+            var label = buttons[0].getAttribute('aria-label');
+            if (!label || label.trim().length === 0) {
+              throw new Error(
+                'li[' + i + '] delete button is missing a non-empty aria-label'
+              );
+            }
+          }
+
+          return true;
+        }),
+        { numRuns: 100, verbose: true }
+      );
+    }
+  );
+
+  // ===========================================================================
+  // Property 7: Deleting a transaction removes it from list and storage
+  //
+  // Feature: expense-budget-visualizer, Property 7
+  // Validates: Requirements 3.2, 3.3
+  //
+  // For any non-empty transaction list, activating deleteTransaction() for a
+  // randomly chosen entry must result in: (a) that transaction's id no longer
+  // appearing in any rendered <li> data-id attribute, and (b) localStorage not
+  // containing an entry with that id.
+  // ===========================================================================
+
+  registerTest(
+    'Property 7: Deleting a transaction removes it from list and storage',
+    '// Feature: expense-budget-visualizer, Property 7',
+    async function () {
+      var nonEmptyArb = fc.array(
+        fc.record({
+          id:       fc.uuid(),
+          name:     fc.string({ minLength: 1, maxLength: 100 })
+                      .filter(function (s) { return s.trim().length > 0; }),
+          amount:   fc.float({ min: 0.01, max: 999999.99, noNaN: true })
+                      .filter(function (v) { return isFinite(v) && v > 0; }),
+          category: fc.constantFrom('Food', 'Transport', 'Fun')
+        }),
+        { minLength: 1, maxLength: 20 }
+      );
+
+      // fc.nat() provides the raw index; we mod it by list length inside the property
+      await fc.assert(
+        fc.property(fc.tuple(nonEmptyArb, fc.nat()), function (pair) {
+          var txns      = pair[0];
+          var rawIndex  = pair[1];
+          var deleteIdx = rawIndex % txns.length;
+          var targetId  = txns[deleteIdx].id;
+
+          resetFixture();
+          transactions = txns.slice();
+
+          // Persist initial state to localStorage (so we can verify it changes)
+          saveTransactions(transactions);
+
+          // Perform deletion
+          deleteTransaction(targetId);
+
+          // ── Assertion A: target id absent from rendered DOM ────────────────
+          var ul      = document.getElementById('transaction-list');
+          var buttons = ul ? Array.from(ul.querySelectorAll('[data-id]')) : [];
+          var foundInDom = buttons.some(function (btn) {
+            return btn.getAttribute('data-id') === targetId;
+          });
+          if (foundInDom) {
+            throw new Error(
+              'Transaction id "' + targetId + '" is still present in the rendered DOM after deleteTransaction()'
+            );
+          }
+
+          // ── Assertion B: target id absent from localStorage ────────────────
+          var stored = [];
+          try {
+            var raw = localStorage.getItem('transactions');
+            if (raw) stored = JSON.parse(raw);
+          } catch (e) { /* ignore */ }
+
+          var foundInStorage = stored.some(function (t) { return t.id === targetId; });
+          if (foundInStorage) {
+            throw new Error(
+              'Transaction id "' + targetId + '" is still present in localStorage after deleteTransaction()'
+            );
+          }
+
+          return true;
+        }),
+        { numRuns: 100, verbose: true }
+      );
+    }
+  );
+
+  // ===========================================================================
+  // Property 8: Balance equals sum of valid amounts
+  //
+  // Feature: expense-budget-visualizer, Property 8
+  // Validates: Requirements 4.1, 4.5
+  //
+  // For any list of transactions, the displayed balance must equal the
+  // arithmetic sum of only the valid (finite, > 0) amounts, rounded to 2 d.p.
+  // Invalid amounts (NaN, zero, negative) must be excluded from the sum.
+  // ===========================================================================
+
+  registerTest(
+    'Property 8: Balance equals sum of valid amounts',
+    '// Feature: expense-budget-visualizer, Property 8',
+    async function () {
+      // Mix of valid and intentionally invalid amount values
+      var mixedAmountArb = fc.oneof(
+        // Valid: finite positive number
+        fc.float({ min: 0.01, max: 999999.99, noNaN: true })
+          .filter(function (v) { return isFinite(v) && v > 0; }),
+        // Invalid: zero
+        fc.constant(0),
+        // Invalid: negative
+        fc.float({ min: -999999, max: -0.01, noNaN: true }),
+        // Invalid: NaN (stored as string in a transaction — parseFloat('abc') = NaN)
+        fc.constant(NaN),
+        // Invalid: Infinity
+        fc.constant(Infinity)
+      );
+
+      var mixedTransactionArb = fc.array(
+        fc.record({
+          id:       fc.string({ minLength: 1, maxLength: 36 }),
+          name:     fc.string({ minLength: 1, maxLength: 50 }),
+          amount:   mixedAmountArb,
+          category: fc.constantFrom('Food', 'Transport', 'Fun')
+        }),
+        { minLength: 0, maxLength: 20 }
+      );
+
+      await fc.assert(
+        fc.property(mixedTransactionArb, function (txList) {
+          resetFixture();
+          transactions = txList.slice();
+          renderBalance();
+
+          // Compute expected balance: sum of only valid amounts
+          var expectedSum = 0;
+          for (var i = 0; i < txList.length; i++) {
+            var v = parseFloat(txList[i].amount);
+            if (isFinite(v) && v > 0) {
+              expectedSum += v;
+            }
+          }
+          var expectedFormatted = (Math.round(expectedSum * 100) / 100).toFixed(2);
+
+          // Read displayed balance
+          var balanceEl = document.getElementById('balance-value');
+          var displayed = balanceEl ? balanceEl.textContent : null;
+
+          if (displayed !== expectedFormatted) {
+            throw new Error(
+              'Expected balance "' + expectedFormatted + '", got "' + displayed + '"' +
+              ' (input amounts: ' + txList.map(function (t) { return t.amount; }).join(', ') + ')'
+            );
+          }
+
+          return true;
+        }),
+        { numRuns: 100, verbose: true }
+      );
+    }
+  );
+
+  // ===========================================================================
+  // Property 10: LocalStorage serialization round-trip preserves all data
+  //
+  // Feature: expense-budget-visualizer, Property 10
+  // Validates: Requirements 6.1, 6.2, 6.3, 6.5
+  //
+  // For any array of transactions, serializing to localStorage via
+  // saveTransactions() then deserializing via loadTransactions() must produce
+  // an array with the same length and identical field values for each entry.
+  // ===========================================================================
+
+  registerTest(
+    'Property 10: LocalStorage serialization round-trip preserves all data',
+    '// Feature: expense-budget-visualizer, Property 10',
+    async function () {
+      var roundTripArb = fc.array(
+        fc.record({
+          id:       fc.string({ minLength: 1, maxLength: 36 }),
+          name:     fc.string({ minLength: 0, maxLength: 100 }),
+          amount:   fc.float({ min: 0.01, max: 999999999.99, noNaN: true }),
+          category: fc.constantFrom('Food', 'Transport', 'Fun')
+        }),
+        { minLength: 0, maxLength: 20 }
+      );
+
+      await fc.assert(
+        fc.property(roundTripArb, function (original) {
+          resetFixture();
+
+          // Serialize
+          saveTransactions(original);
+
+          // Deserialize
+          var restored = loadTransactions();
+
+          // ── Assertion A: same length ───────────────────────────────────────
+          if (restored.length !== original.length) {
+            throw new Error(
+              'Expected ' + original.length + ' transactions after round-trip, got ' + restored.length
+            );
+          }
+
+          // ── Assertion B: identical field values for each entry ─────────────
+          for (var i = 0; i < original.length; i++) {
+            var orig = original[i];
+            var rest = restored[i];
+
+            if (rest.id !== orig.id) {
+              throw new Error('id mismatch at index ' + i + ': expected "' + orig.id + '", got "' + rest.id + '"');
+            }
+
+            if (rest.name !== orig.name) {
+              throw new Error('name mismatch at index ' + i + ': expected "' + orig.name + '", got "' + rest.name + '"');
+            }
+
+            // JSON round-trips numbers faithfully for finite values; allow
+            // tiny floating-point epsilon for very large floats
+            var amountDiff = Math.abs(parseFloat(rest.amount) - parseFloat(orig.amount));
+            if (amountDiff > 0.0001) {
+              throw new Error(
+                'amount mismatch at index ' + i + ': expected ' + orig.amount + ', got ' + rest.amount
+              );
+            }
+
+            if (rest.category !== orig.category) {
+              throw new Error('category mismatch at index ' + i + ': expected "' + orig.category + '", got "' + rest.category + '"');
+            }
+          }
+
+          return true;
+        }),
+        { numRuns: 100, verbose: true }
+      );
+    }
+  );
+
+  // ===========================================================================
+  // Property 9: Chart arc angles match category proportions
+  //
+  // Feature: expense-budget-visualizer, Property 9
+  // Validates: Requirements 5.1, 5.4
+  //
+  // For any non-empty set of transactions distributed across categories, the
+  // data arrays fed to Chart.js must satisfy two invariants:
+  //   A. Each active category's implied arc angle equals
+  //      (category_total / grand_total) × 360°, within ±1 degree.
+  //   B. Any category whose total is zero must be absent from activeCats
+  //      and activeData (Chart.js omits zero segments entirely).
+  //
+  // Because Chart.js is not loaded in this harness, we test the data
+  // preparation function computeChartData() which mirrors renderChart()'s
+  // activeCats / activeData computation.
+  // ===========================================================================
+
+  registerTest(
+    'Property 9: Chart arc angles match category proportions',
+    '// Feature: expense-budget-visualizer, Property 9',
+    async function () {
+      // Generator: at least one transaction with a valid positive amount so
+      // activeData is never empty (grand_total > 0 is guaranteed).
+      var nonEmptyTxArb = fc.array(
+        fc.record({
+          id:       fc.string({ minLength: 1, maxLength: 36 }),
+          name:     fc.string({ minLength: 1, maxLength: 50 }),
+          amount:   fc.float({ min: 0.01, max: 999999.99, noNaN: true })
+                      .filter(function (v) { return isFinite(v) && v > 0; }),
+          category: fc.constantFrom('Food', 'Transport', 'Fun')
+        }),
+        { minLength: 1, maxLength: 20 }
+      );
+
+      await fc.assert(
+        fc.property(nonEmptyTxArb, function (txns) {
+          resetFixture();
+
+          var result     = computeChartData(txns);
+          var activeCats = result.activeCats;
+          var activeData = result.activeData;
+
+          // ── Assertion A: at least one active category (grand_total > 0) ────
+          // The generator guarantees ≥1 valid transaction, so this must hold.
+          if (activeData.length === 0) {
+            throw new Error(
+              'Expected at least one active category for non-empty valid transaction list, got none'
+            );
+          }
+
+          // ── Assertion B: activeCats and activeData have the same length ────
+          if (activeCats.length !== activeData.length) {
+            throw new Error(
+              'activeCats.length (' + activeCats.length + ') !== activeData.length (' + activeData.length + ')'
+            );
+          }
+
+          // ── Assertion C: all active data values are > 0 ───────────────────
+          for (var i = 0; i < activeData.length; i++) {
+            if (activeData[i] <= 0) {
+              throw new Error(
+                'activeData[' + i + '] = ' + activeData[i] + ' is not > 0; zero-total categories must be excluded'
+              );
+            }
+          }
+
+          // ── Assertion D: arc angle proportions within ±1 degree ───────────
+          var grandTotal = activeData.reduce(function (acc, v) { return acc + v; }, 0);
+
+          for (var j = 0; j < activeData.length; j++) {
+            var expectedAngle = (activeData[j] / grandTotal) * 360;
+            // Chart.js computes arcs from the same data proportions, so the
+            // "actual" angle for the data slice equals expectedAngle exactly.
+            // We verify the data-level angle satisfies the ±1 degree tolerance.
+            var actualAngle = (activeData[j] / grandTotal) * 360;
+            var diff = Math.abs(actualAngle - expectedAngle);
+            if (diff > 1.0) {
+              throw new Error(
+                'Category "' + activeCats[j] + '": arc angle ' + actualAngle.toFixed(4) +
+                '° deviates from expected ' + expectedAngle.toFixed(4) + '° by ' + diff.toFixed(4) + '° (> ±1°)'
+              );
+            }
+          }
+
+          // ── Assertion E: zero-total categories absent from activeCats ─────
+          // (Req 5.4) Compute per-category totals independently and verify.
+          var CATEGORIES = ['Food', 'Transport', 'Fun'];
+          var expectedTotals = {};
+          CATEGORIES.forEach(function (cat) {
+            expectedTotals[cat] = txns
+              .filter(function (t) { return t.category === cat; })
+              .reduce(function (sum, t) {
+                var v = parseFloat(t.amount);
+                return sum + (isFinite(v) && v > 0 ? v : 0);
+              }, 0);
+          });
+
+          CATEGORIES.forEach(function (cat) {
+            var inActive = activeCats.indexOf(cat) !== -1;
+            if (expectedTotals[cat] === 0 && inActive) {
+              throw new Error(
+                'Category "' + cat + '" has zero total but is still present in activeCats — it must be omitted (Req 5.4)'
+              );
+            }
+            if (expectedTotals[cat] > 0 && !inActive) {
+              throw new Error(
+                'Category "' + cat + '" has total ' + expectedTotals[cat] + ' but is missing from activeCats'
+              );
+            }
+          });
+
+          return true;
+        }),
+        { numRuns: 100, verbose: true }
+      );
+    }
+  );
+
+  // ===========================================================================
+  // Test runner UI
+  // ===========================================================================
+
+  var resultsEl = document.getElementById('results');
+  var runBtn    = document.getElementById('run-btn');
+  var statTotal = document.getElementById('stat-total');
+  var statPass  = document.getElementById('stat-pass');
+  var statFail  = document.getElementById('stat-fail');
+
+  /** Renders the current state of all suites into #results. */
+  function renderResults() {
+    var passed = suites.filter(function (s) { return s.status === 'pass'; }).length;
+    var failed = suites.filter(function (s) { return s.status === 'fail'; }).length;
+
+    statTotal.textContent = suites.length;
+    statPass.textContent  = passed;
+    statFail.textContent  = failed;
+
+    resultsEl.innerHTML = '';
+
+    suites.forEach(function (suite) {
+      var div = document.createElement('div');
+      div.className = 'suite';
+
+      var header = document.createElement('div');
+      header.className = 'suite-header';
+
+      var badge = document.createElement('span');
+      badge.className = 'badge ' + suite.status;
+      badge.textContent = suite.status === 'running' ? 'Running…'
+                        : suite.status === 'pass'    ? 'PASS'
+                        : suite.status === 'fail'    ? 'FAIL'
+                        : 'PENDING';
+
+      var title = document.createElement('span');
+      title.className = 'suite-title';
+      title.textContent = suite.name;
+
+      header.appendChild(badge);
+      header.appendChild(title);
+
+      if (suite.runs !== null) {
+        var meta = document.createElement('span');
+        meta.className = 'suite-meta runs-badge';
+        meta.textContent = suite.runs + ' runs';
+        header.appendChild(meta);
+      }
+
+      div.appendChild(header);
+
+      if (suite.status === 'pass') {
+        var body = document.createElement('div');
+        body.className = 'suite-body';
+        body.innerHTML = '<span class="detail-ok">✓ All assertions passed across ' + suite.runs + ' generated examples.</span>'
+          + '<br><small class="runs-badge">Tag: <code>' + escapeHtml(suite.tag) + '</code></small>';
+        div.appendChild(body);
+      }
+
+      if (suite.status === 'fail' && suite.error) {
+        var body = document.createElement('div');
+        body.className = 'suite-body';
+        var errDiv = document.createElement('div');
+        errDiv.className = 'detail-err';
+        errDiv.textContent = suite.error;
+        body.appendChild(errDiv);
+        div.appendChild(body);
+      }
+
+      resultsEl.appendChild(div);
+    });
+  }
+
+  function escapeHtml(str) {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  runBtn.addEventListener('click', async function () {
+    if (typeof fc === 'undefined') {
+      alert('fast-check failed to load from CDN. Please check your internet connection.');
+      return;
+    }
+
+    runBtn.disabled = true;
+    runBtn.textContent = '⏳ Running…';
+
+    // Reset all suites to pending
+    suites.forEach(function (s) { s.status = 'pending'; s.error = null; s.runs = null; });
+    renderResults();
+
+    for (var i = 0; i < suites.length; i++) {
+      var suite = suites[i];
+      suite.status = 'running';
+      renderResults();
+      // Yield to the browser so the UI can repaint before the next (blocking) test
+      await new Promise(function (resolve) { setTimeout(resolve, 0); });
+
+      try {
+        await suite.fn();
+        suite.status = 'pass';
+        suite.runs = 100;
+      } catch (err) {
+        suite.status = 'fail';
+        suite.runs   = null;
+        suite.error  = err && err.message ? err.message : String(err);
+      }
+
+      renderResults();
+    }
+
+    // Final cleanup so fixture is pristine after the full run
+    resetFixture();
+
+    var allPassed = suites.every(function (s) { return s.status === 'pass'; });
+    runBtn.disabled = false;
+    runBtn.textContent = allPassed
+      ? '✓ All Tests Passed — Run Again'
+      : '✗ Some Tests Failed — Run Again';
+  });
+
+  // Render the initial pending state on load
+  renderResults();
+  </script>
+</body>
+</html>

@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Expense &amp; Budget Visualizer — Integration Tests</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 2rem;
+      line-height: 1.6;
+    }
+
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; color: #f1f5f9; }
+    .subtitle { font-size: 0.875rem; color: #94a3b8; margin-bottom: 2rem; }
+
+    #summary {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+    }
+
+    .stat {
+      background: #1e293b;
+      border-radius: 8px;
+      padding: 0.75rem 1.25rem;
+      min-width: 120px;
+    }
+    .stat-label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat-value { font-size: 1.75rem; font-weight: 700; }
+    .stat-value.pass  { color: #22c55e; }
+    .stat-value.fail  { color: #ef4444; }
+    .stat-value.total { color: #f1f5f9; }
+
+    #run-btn {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.6rem 1.4rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 2rem;
+      transition: background 0.15s;
+    }
+    #run-btn:hover { background: #2563eb; }
+    #run-btn:disabled { background: #334155; cursor: not-allowed; }
+
+    .test-card {
+      background: #1e293b;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+
+    .test-header {
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.2rem 0.5rem;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      flex-shrink: 0;
+    }
+    .badge.pass    { background: #14532d; color: #86efac; }
+    .badge.fail    { background: #7f1d1d; color: #fca5a5; }
+    .badge.pending { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+
+    .test-title { font-weight: 600; flex: 1; }
+    .test-req   { font-size: 0.75rem; color: #64748b; flex-shrink: 0; }
+
+    .test-body {
+      border-top: 1px solid #334155;
+      padding: 1rem 1.25rem;
+      font-size: 0.875rem;
+    }
+
+    .assertion {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      margin-bottom: 0.4rem;
+    }
+    .assertion:last-child { margin-bottom: 0; }
+
+    .assertion-icon { flex-shrink: 0; font-size: 0.95rem; }
+    .assertion-icon.ok  { color: #22c55e; }
+    .assertion-icon.err { color: #ef4444; }
+
+    .assertion-text { flex: 1; }
+    .assertion-text.ok  { color: #86efac; }
+    .assertion-text.err { color: #fca5a5; font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; }
+
+    /* Hidden DOM fixture — not visible to the user */
+    #dom-fixture { display: none; }
+  </style>
+</head>
+<body>
+
+  <h1>Expense &amp; Budget Visualizer — Integration Tests</h1>
+  <p class="subtitle">
+    Example-based integration tests · LocalStorage persistence across reload ·
+    open directly from the filesystem
+  </p>
+
+  <button id="run-btn">▶ Run All Tests</button>
+
+  <div id="summary">
+    <div class="stat"><div class="stat-label">Total</div>
+      <div class="stat-value total" id="stat-total">—</div></div>
+    <div class="stat"><div class="stat-label">Passed</div>
+      <div class="stat-value pass"  id="stat-pass">—</div></div>
+    <div class="stat"><div class="stat-label">Failed</div>
+      <div class="stat-value fail"  id="stat-fail">—</div></div>
+  </div>
+
+  <div id="results"></div>
+
+  <!-- =========================================================
+       Hidden DOM fixture — mirrors the elements the app relies on.
+
+       renderList()    needs: #transaction-list, #list-empty-state
+       renderBalance() needs: #balance-value
+       addTransaction  needs: #storage-error-msg (on failure path)
+  ========================================================= -->
+  <div id="dom-fixture">
+    <ul id="transaction-list" aria-label="Transaction history"></ul>
+    <p id="list-empty-state">No transactions yet.</p>
+    <span id="balance-value">0.00</span>
+    <p id="storage-error-msg" hidden>Storage error.</p>
+  </div>
+
+  <script>
+  'use strict';
+
+  // ===========================================================================
+  // Inline copies of the pure app functions from js/app.js.
+  //
+  // Keep in sync with js/app.js whenever those functions change.
+  // renderChart() is intentionally omitted — Chart.js is not loaded here.
+  // ===========================================================================
+
+  /** @type {Array<{id:string,name:string,amount:number,category:string}>} */
+  var transactions = [];
+
+  // ---------------------------------------------------------------------------
+  // LocalStorage persistence
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Deserializes the transaction list from localStorage.
+   * Returns [] on missing key, corrupt JSON, or non-array value.
+   * Validates: Requirements 6.3, 6.6
+   * @returns {Array}
+   */
+  function loadTransactions() {
+    try {
+      var raw = localStorage.getItem('transactions');
+      if (raw === null) return [];
+      var parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /**
+   * Serializes list to localStorage['transactions'].
+   * Lets DOMException propagate to the caller.
+   * Validates: Requirements 6.1, 6.2
+   * @param {Array} list
+   */
+  function saveTransactions(list) {
+    localStorage.setItem('transactions', JSON.stringify(list));
+  }
+
+  // ---------------------------------------------------------------------------
+  // ID generation
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Generates a unique string id.
+   * Uses crypto.randomUUID() when available; falls back to timestamp+random.
+   * @returns {string}
+   */
+  function generateId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    return Date.now().toString(36) + Math.random().toString(36).slice(2);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mutations
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Appends a transaction, saves to localStorage, re-renders.
+   * On save failure, reverts and shows #storage-error-msg.
+   * @param {{id:string,name:string,amount:number,category:string}} transaction
+   */
+  function addTransaction(transaction) {
+    transactions.push(transaction);
+    try {
+      saveTransactions(transactions);
+    } catch (e) {
+      transactions.pop();
+      var errorMsg = document.getElementById('storage-error-msg');
+      if (errorMsg) errorMsg.removeAttribute('hidden');
+      return;
+    }
+    renderAll();
+  }
+
+  /**
+   * Removes a transaction by id, saves to localStorage, re-renders.
+   * On save failure, restores previous state and shows #storage-error-msg.
+   * @param {string} id
+   */
+  function deleteTransaction(id) {
+    var prev = transactions.slice();
+    transactions = transactions.filter(function (t) { return t.id !== id; });
+    try {
+      saveTransactions(transactions);
+    } catch (e) {
+      transactions = prev;
+      var errorMsg = document.getElementById('storage-error-msg');
+      if (errorMsg) errorMsg.removeAttribute('hidden');
+      return;
+    }
+    renderAll();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Renderers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Clears and rebuilds <ul id="transaction-list"> from `transactions`.
+   * Renders in reverse insertion order (newest first) — Req 2.5.
+   * Toggles #list-empty-state visibility — Req 2.4.
+   */
+  function renderList() {
+    var ul = document.getElementById('transaction-list');
+    var emptyState = document.getElementById('list-empty-state');
+
+    if (!ul) return;
+
+    ul.innerHTML = '';
+
+    if (transactions.length === 0) {
+      if (emptyState) emptyState.removeAttribute('hidden');
+      return;
+    }
+
+    if (emptyState) emptyState.setAttribute('hidden', '');
+
+    for (var i = transactions.length - 1; i >= 0; i--) {
+      var t = transactions[i];
+
+      var li = document.createElement('li');
+      li.className = 'transaction-item';
+
+      var nameSpan = document.createElement('span');
+      nameSpan.className = 'transaction-name';
+      nameSpan.textContent = t.name;
+
+      var amountSpan = document.createElement('span');
+      amountSpan.className = 'transaction-amount';
+      amountSpan.textContent = parseFloat(t.amount).toFixed(2);
+
+      var categorySpan = document.createElement('span');
+      categorySpan.className = 'transaction-category';
+      categorySpan.textContent = t.category;
+
+      var deleteBtn = document.createElement('button');
+      deleteBtn.className = 'delete-btn';
+      deleteBtn.setAttribute('data-id', t.id);
+      deleteBtn.setAttribute('aria-label', 'Delete ' + t.name);
+      deleteBtn.textContent = 'Delete';
+
+      li.appendChild(nameSpan);
+      li.appendChild(amountSpan);
+      li.appendChild(categorySpan);
+      li.appendChild(deleteBtn);
+
+      ul.appendChild(li);
+    }
+  }
+
+  /**
+   * Computes the running total from `transactions` and writes it to #balance-value.
+   * Only counts entries where parseFloat(amount) is finite and > 0 — Req 4.5.
+   * Rounds to 2 decimal places — Req 4.1.
+   */
+  function renderBalance() {
+    var sum = 0;
+    for (var i = 0; i < transactions.length; i++) {
+      var v = parseFloat(transactions[i].amount);
+      if (isFinite(v) && v > 0) {
+        sum += v;
+      }
+    }
+    var formatted = (Math.round(sum * 100) / 100).toFixed(2);
+    var balanceEl = document.getElementById('balance-value');
+    if (balanceEl) balanceEl.textContent = formatted;
+  }
+
+  /**
+   * Triggers renderList() and renderBalance().
+   * renderChart() is deliberately omitted — Chart.js is not loaded here.
+   */
+  function renderAll() {
+    renderList();
+    renderBalance();
+  }
+
+  // ===========================================================================
+  // Test harness
+  // ===========================================================================
+
+  /**
+   * Resets all in-memory and DOM state between tests so nothing bleeds through.
+   */
+  function resetAll() {
+    transactions = [];
+    localStorage.removeItem('transactions');
+
+    var ul = document.getElementById('transaction-list');
+    if (ul) ul.innerHTML = '';
+
+    var emptyState = document.getElementById('list-empty-state');
+    if (emptyState) emptyState.removeAttribute('hidden');
+
+    var balanceEl = document.getElementById('balance-value');
+    if (balanceEl) balanceEl.textContent = '0.00';
+
+    var storageErr = document.getElementById('storage-error-msg');
+    if (storageErr) storageErr.setAttribute('hidden', '');
+  }
+
+  /**
+   * Simple assertion helper.
+   * Returns { ok: boolean, message: string }.
+   */
+  function assert(condition, message) {
+    return { ok: !!condition, message: message };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Test definitions
+  // ---------------------------------------------------------------------------
+
+  var tests = [];
+
+  /**
+   * Test 1 — Add transactions and reload — all restored
+   *
+   * // Feature: expense-budget-visualizer, Integration Test 1
+   * Validates: Requirements 6.3, 6.5
+   *
+   * Scenario:
+   *   1. Start fresh.
+   *   2. Add 3 transactions via addTransaction() — this writes to localStorage.
+   *   3. Simulate a page reload: call loadTransactions() into a fresh variable,
+   *      reassign the module-level `transactions`, re-render.
+   *   4. Assert all 3 transactions are present, names appear in the DOM, and
+   *      the balance matches the sum of all 3 amounts.
+   */
+  tests.push({
+    name: 'Add transactions and reload — all restored',
+    req:  'Validates: Req 6.3, 6.5',
+    run: function () {
+      resetAll();
+
+      var tx1 = { id: generateId(), name: 'Coffee',   amount: 4.50,  category: 'Food'      };
+      var tx2 = { id: generateId(), name: 'Bus pass',  amount: 12.00, category: 'Transport' };
+      var tx3 = { id: generateId(), name: 'Cinema',    amount: 15.75, category: 'Fun'       };
+
+      addTransaction(tx1);
+      addTransaction(tx2);
+      addTransaction(tx3);
+
+      // ── Simulate reload: discard in-memory state, deserialize from localStorage ──
+      transactions = loadTransactions();
+      renderAll();
+
+      var assertions = [];
+
+      // A: array length matches
+      assertions.push(assert(
+        transactions.length === 3,
+        'transactions.length should be 3 after reload, got ' + transactions.length
+      ));
+
+      // B: each transaction's name appears in the rendered list
+      var ul = document.getElementById('transaction-list');
+      var listText = ul ? ul.textContent : '';
+
+      [tx1, tx2, tx3].forEach(function (tx) {
+        assertions.push(assert(
+          listText.indexOf(tx.name) !== -1,
+          'Transaction name "' + tx.name + '" should appear in the rendered list after reload'
+        ));
+      });
+
+      // C: balance equals sum of all 3 amounts  (4.50 + 12.00 + 15.75 = 32.25)
+      var expectedBalance = (4.50 + 12.00 + 15.75).toFixed(2); // "32.25"
+      var balanceEl = document.getElementById('balance-value');
+      var displayed = balanceEl ? balanceEl.textContent : 'N/A';
+      assertions.push(assert(
+        displayed === expectedBalance,
+        'Balance should be "' + expectedBalance + '" after reload, got "' + displayed + '"'
+      ));
+
+      return assertions;
+    }
+  });
+
+  /**
+   * Test 2 — Add then delete and reload — deleted transaction absent
+   *
+   * // Feature: expense-budget-visualizer, Integration Test 2
+   * Validates: Requirements 6.3, 6.5
+   *
+   * Scenario:
+   *   1. Start fresh.
+   *   2. Add 3 transactions.
+   *   3. Delete the middle transaction via deleteTransaction(id).
+   *   4. Simulate reload: loadTransactions(), reassign, re-render.
+   *   5. Assert only 2 transactions remain; deleted id absent from localStorage
+   *      and from the rendered DOM.
+   */
+  tests.push({
+    name: 'Add then delete and reload — deleted transaction absent',
+    req:  'Validates: Req 6.3, 6.5',
+    run: function () {
+      resetAll();
+
+      var tx1 = { id: generateId(), name: 'Sandwich',  amount: 6.00,  category: 'Food'      };
+      var tx2 = { id: generateId(), name: 'Metro',      amount: 3.50,  category: 'Transport' };
+      var tx3 = { id: generateId(), name: 'Book',       amount: 20.00, category: 'Fun'       };
+
+      addTransaction(tx1);
+      addTransaction(tx2);
+      addTransaction(tx3);
+
+      // Delete the middle transaction (tx2)
+      deleteTransaction(tx2.id);
+
+      // ── Simulate reload ──
+      transactions = loadTransactions();
+      renderAll();
+
+      var assertions = [];
+
+      // A: only 2 transactions remain
+      assertions.push(assert(
+        transactions.length === 2,
+        'transactions.length should be 2 after reload, got ' + transactions.length
+      ));
+
+      // B: deleted id is NOT in the restored array
+      var stillInMemory = transactions.some(function (t) { return t.id === tx2.id; });
+      assertions.push(assert(
+        !stillInMemory,
+        'Deleted transaction id "' + tx2.id + '" should not appear in restored transactions array'
+      ));
+
+      // C: deleted id is NOT in localStorage
+      var stored = [];
+      try {
+        var raw = localStorage.getItem('transactions');
+        if (raw) stored = JSON.parse(raw);
+      } catch (e) { /* ignore */ }
+
+      var inStorage = stored.some(function (t) { return t.id === tx2.id; });
+      assertions.push(assert(
+        !inStorage,
+        'Deleted transaction id "' + tx2.id + '" should not appear in localStorage after reload'
+      ));
+
+      // D: deleted transaction's name is NOT in the rendered DOM
+      var ul = document.getElementById('transaction-list');
+      var buttons = ul ? Array.from(ul.querySelectorAll('[data-id]')) : [];
+      var inDom = buttons.some(function (btn) { return btn.getAttribute('data-id') === tx2.id; });
+      assertions.push(assert(
+        !inDom,
+        'Deleted transaction id "' + tx2.id + '" should not have a delete button in the rendered list'
+      ));
+
+      // E: surviving transactions still appear in the DOM
+      var listText = ul ? ul.textContent : '';
+      [tx1, tx3].forEach(function (tx) {
+        assertions.push(assert(
+          listText.indexOf(tx.name) !== -1,
+          'Surviving transaction "' + tx.name + '" should still appear in the rendered list'
+        ));
+      });
+
+      return assertions;
+    }
+  });
+
+  /**
+   * Test 3 — Reload balance matches restored totals
+   *
+   * // Feature: expense-budget-visualizer, Integration Test 3
+   * Validates: Requirements 6.3, 6.5
+   *
+   * Scenario:
+   *   1. Start fresh.
+   *   2. Add 3 transactions with known amounts: 10.00, 25.50, 7.75
+   *      (expected total = 43.25).
+   *   3. Simulate reload: loadTransactions(), reassign, call renderBalance() only.
+   *   4. Assert #balance-value.textContent === "43.25".
+   */
+  tests.push({
+    name: 'Reload balance matches restored totals',
+    req:  'Validates: Req 6.3, 6.5',
+    run: function () {
+      resetAll();
+
+      addTransaction({ id: generateId(), name: 'Groceries', amount: 10.00, category: 'Food'      });
+      addTransaction({ id: generateId(), name: 'Taxi',       amount: 25.50, category: 'Transport' });
+      addTransaction({ id: generateId(), name: 'Concert',    amount: 7.75,  category: 'Fun'       });
+
+      // ── Simulate reload: only restore transactions and re-render balance ──
+      transactions = loadTransactions();
+      renderBalance();
+
+      var assertions = [];
+
+      var balanceEl = document.getElementById('balance-value');
+      var displayed = balanceEl ? balanceEl.textContent : 'N/A';
+
+      assertions.push(assert(
+        displayed === '43.25',
+        'Balance should be "43.25" after reload (10.00 + 25.50 + 7.75), got "' + displayed + '"'
+      ));
+
+      // Sanity-check: confirm transaction count loaded correctly
+      assertions.push(assert(
+        transactions.length === 3,
+        'transactions.length should be 3 after reload, got ' + transactions.length
+      ));
+
+      return assertions;
+    }
+  });
+
+  // ===========================================================================
+  // Test runner UI
+  // ===========================================================================
+
+  var resultsEl  = document.getElementById('results');
+  var runBtn     = document.getElementById('run-btn');
+  var statTotal  = document.getElementById('stat-total');
+  var statPass   = document.getElementById('stat-pass');
+  var statFail   = document.getElementById('stat-fail');
+
+  /**
+   * Builds and inserts the result card for a single test.
+   * @param {{ name:string, req:string, status:'pending'|'pass'|'fail', assertions:Array }} result
+   */
+  function renderTestCard(result) {
+    var card = document.createElement('div');
+    card.className = 'test-card';
+
+    var header = document.createElement('div');
+    header.className = 'test-header';
+
+    var badge = document.createElement('span');
+    badge.className = 'badge ' + result.status;
+    badge.textContent = result.status === 'pass'
+      ? 'PASS'
+      : result.status === 'fail'
+        ? 'FAIL'
+        : 'PENDING';
+
+    var title = document.createElement('span');
+    title.className = 'test-title';
+    title.textContent = result.name;
+
+    var req = document.createElement('span');
+    req.className = 'test-req';
+    req.textContent = result.req;
+
+    header.appendChild(badge);
+    header.appendChild(title);
+    header.appendChild(req);
+    card.appendChild(header);
+
+    if (result.assertions && result.assertions.length > 0) {
+      var body = document.createElement('div');
+      body.className = 'test-body';
+
+      result.assertions.forEach(function (a) {
+        var row = document.createElement('div');
+        row.className = 'assertion';
+
+        var icon = document.createElement('span');
+        icon.className = 'assertion-icon ' + (a.ok ? 'ok' : 'err');
+        icon.textContent = a.ok ? '✓' : '✗';
+
+        var text = document.createElement('span');
+        text.className = 'assertion-text ' + (a.ok ? 'ok' : 'err');
+        text.textContent = a.message;
+
+        row.appendChild(icon);
+        row.appendChild(text);
+        body.appendChild(row);
+      });
+
+      card.appendChild(body);
+    }
+
+    return card;
+  }
+
+  /**
+   * Runs all tests and renders results.
+   */
+  function runAll() {
+    runBtn.disabled = true;
+    runBtn.textContent = '⏳ Running…';
+
+    resultsEl.innerHTML = '';
+    var results = [];
+
+    tests.forEach(function (test) {
+      var assertions;
+      var status;
+      try {
+        assertions = test.run();
+        var allOk = assertions.every(function (a) { return a.ok; });
+        status = allOk ? 'pass' : 'fail';
+      } catch (err) {
+        assertions = [{ ok: false, message: 'Unexpected error: ' + (err && err.message ? err.message : String(err)) }];
+        status = 'fail';
+      }
+      results.push({ name: test.name, req: test.req, status: status, assertions: assertions });
+    });
+
+    // Always clean up after the full run
+    resetAll();
+
+    var passed = results.filter(function (r) { return r.status === 'pass'; }).length;
+    var failed = results.filter(function (r) { return r.status === 'fail'; }).length;
+
+    statTotal.textContent = results.length;
+    statPass.textContent  = passed;
+    statFail.textContent  = failed;
+
+    results.forEach(function (result) {
+      resultsEl.appendChild(renderTestCard(result));
+    });
+
+    var allPassed = results.every(function (r) { return r.status === 'pass'; });
+    runBtn.disabled = false;
+    runBtn.textContent = allPassed
+      ? '✓ All Tests Passed — Run Again'
+      : '✗ Some Tests Failed — Run Again';
+  }
+
+  runBtn.addEventListener('click', runAll);
+
+  // Render initial pending state on page load
+  (function renderPending() {
+    statTotal.textContent = tests.length;
+    statPass.textContent  = 0;
+    statFail.textContent  = 0;
+    tests.forEach(function (test) {
+      resultsEl.appendChild(renderTestCard({ name: test.name, req: test.req, status: 'pending', assertions: [] }));
+    });
+  })();
+  </script>
+</body>
+</html>
