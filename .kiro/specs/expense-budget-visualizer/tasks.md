@@ -169,7 +169,7 @@ Build a zero-dependency single-page web application from three static files (`in
     - Test: reload balance → verify it matches restored totals
     - _Requirements: 6.3, 6.5_
 
-- [-] 13. Final checkpoint — full verification
+- [x] 13. Final checkpoint — full verification
   - Ensure all (non-optional) implementation tasks are complete, the HTML opens directly from the filesystem without errors, and all automated property tests pass. Ask the user if any questions arise.
 
 ## Notes

@@ -44,6 +44,12 @@
   /** @type {Chart|null} Holds the single Chart.js instance to avoid flicker (Req 5.5) */
   var chartInstance = null;
 
+  /** @type {string} Current sort key for the transaction list */
+  var currentSort = 'default';
+
+  /** @type {number|null} Spending limit for highlighting; null means disabled */
+  var spendingLimit = null;
+
   // ---------------------------------------------------------------------------
   // LocalStorage persistence write (Req 6.1, 6.2, 6.7)
   // ---------------------------------------------------------------------------
@@ -183,6 +189,52 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Sort helper — returns a sorted copy of transactions (never mutates original)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Returns a sorted copy of the `transactions` array based on `currentSort`.
+   *
+   * - 'default'      → reverse insertion order (newest first)
+   * - 'amount-desc'  → highest amount first
+   * - 'amount-asc'   → lowest amount first
+   * - 'category'     → alphabetical by category, then by name within category
+   *
+   * The original `transactions` array is never mutated.
+   *
+   * @returns {Transaction[]}
+   */
+  function getSortedTransactions() {
+    var copy = transactions.slice();
+    switch (currentSort) {
+      case 'amount-desc':
+        copy.sort(function (a, b) {
+          return parseFloat(b.amount) - parseFloat(a.amount);
+        });
+        break;
+      case 'amount-asc':
+        copy.sort(function (a, b) {
+          return parseFloat(a.amount) - parseFloat(b.amount);
+        });
+        break;
+      case 'category':
+        copy.sort(function (a, b) {
+          if (a.category < b.category) return -1;
+          if (a.category > b.category) return 1;
+          if (a.name < b.name) return -1;
+          if (a.name > b.name) return 1;
+          return 0;
+        });
+        break;
+      default:
+        // 'default' — reverse insertion order (newest first)
+        copy.reverse();
+        break;
+    }
+    return copy;
+  }
+
+  // ---------------------------------------------------------------------------
   // Transaction List Renderer (Req 2.1, 2.2, 2.4, 2.5, 3.1, 7.4)
   // ---------------------------------------------------------------------------
 
@@ -215,12 +267,18 @@
     // Hide empty-state message when there are transactions (Req 2.4)
     if (emptyState) emptyState.setAttribute('hidden', '');
 
-    // Iterate in reverse so the newest transaction appears at the top (Req 2.5)
-    for (var i = transactions.length - 1; i >= 0; i--) {
-      var t = transactions[i];
+    // Use getSortedTransactions() to get the correctly ordered list
+    var sorted = getSortedTransactions();
+    for (var i = 0; i < sorted.length; i++) {
+      var t = sorted[i];
 
       var li = document.createElement('li');
       li.className = 'transaction-item';
+
+      // Highlight rows that exceed the spending limit
+      if (spendingLimit !== null && parseFloat(t.amount) > spendingLimit) {
+        li.classList.add('over-limit');
+      }
 
       // Item name — use textContent to prevent XSS (Req 2.1)
       var nameSpan = document.createElement('span');
@@ -484,6 +542,83 @@
       // Reset form fields to default state (Req 1.4)
       form.reset();
       clearFormErrors();
+    });
+  })();
+
+  // ---------------------------------------------------------------------------
+  // Sort controls click listener (set up once on init)
+  // ---------------------------------------------------------------------------
+
+  (function initSortListener() {
+    var sortControls = document.getElementById('sort-controls');
+    if (!sortControls) return;
+
+    sortControls.addEventListener('click', function (event) {
+      var btn = event.target.closest('.sort-btn');
+      if (!btn) return;
+
+      var sortKey = btn.getAttribute('data-sort');
+      if (!sortKey) return;
+
+      // Update module-level sort state
+      currentSort = sortKey;
+
+      // Update aria-pressed and active class on all sort buttons
+      var allBtns = sortControls.querySelectorAll('.sort-btn');
+      for (var i = 0; i < allBtns.length; i++) {
+        var isActive = allBtns[i] === btn;
+        allBtns[i].setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        if (isActive) {
+          allBtns[i].classList.add('active');
+        } else {
+          allBtns[i].classList.remove('active');
+        }
+      }
+
+      renderList();
+    });
+  })();
+
+  // ---------------------------------------------------------------------------
+  // Spending limit input listener (set up once on init)
+  // ---------------------------------------------------------------------------
+
+  (function initLimitListener() {
+    var limitInput = document.getElementById('spending-limit');
+    if (!limitInput) return;
+
+    limitInput.addEventListener('input', function () {
+      var val = parseFloat(limitInput.value);
+      spendingLimit = (isFinite(val) && val >= 0) ? val : null;
+      renderList();
+    });
+  })();
+
+  // ---------------------------------------------------------------------------
+  // Dark / light theme toggle (set up once on init)
+  // ---------------------------------------------------------------------------
+
+  (function initTheme() {
+    var btn = document.getElementById('theme-toggle');
+    if (!btn) return;
+
+    // Restore saved preference or detect system preference
+    var saved = localStorage.getItem('theme');
+    var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    var isDark = saved === 'dark' || (!saved && prefersDark);
+
+    function applyTheme(dark) {
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      btn.textContent = dark ? '☀️' : '🌙';
+      btn.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
+      localStorage.setItem('theme', dark ? 'dark' : 'light');
+      isDark = dark;
+    }
+
+    applyTheme(isDark);
+
+    btn.addEventListener('click', function () {
+      applyTheme(!isDark);
     });
   })();
 
